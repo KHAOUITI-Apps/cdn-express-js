@@ -21,6 +21,13 @@ const SECRET_KEY = '6PEV9Kyiw_y9O7orH7UezgNgYedhWmjY2Kf_u1T-mKmR3S-gylF1ztsA-FA0
 // Directory containing video files
 const VIDEO_DIRECTORY = path.join(__dirname, '/videos');
 
+// Mock data for video titles, authors, and topics
+const VIDEO_METADATA = {
+    'video1': { title: 'Introduction to Node.js', author: 'John Doe', topic: 'Programming' },
+    'video2': { title: 'Advanced JavaScript', author: 'Jane Smith', topic: 'Web Development' },
+    'video3': { title: 'React for Beginners', author: 'Alice Johnson', topic: 'Frontend Development' },
+};
+
 // Middleware to get client IP
 const getClientIp = (req) => {
     const forwardedFor = req.headers['x-forwarded-for'];
@@ -30,7 +37,7 @@ const getClientIp = (req) => {
 
 // Generate signed URL
 const generateSignedUrl = (videoId, ipAddress) => {
-    const expiryTime = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hours in seconds
+    const expiryTime = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour in seconds
     const data = `${videoId}:${expiryTime}:${ipAddress}`;
     const hmac = crypto.createHmac('sha256', SECRET_KEY);
     hmac.update(data);
@@ -72,10 +79,14 @@ app.get('/api/videos', (req, res) => {
             if (file.endsWith('.mp4')) {
                 const videoId = file.replace('.mp4', '');
                 const signedUrl = generateSignedUrl(videoId, clientIp);
+                const metadata = VIDEO_METADATA[videoId] || { title: 'Unknown', author: 'Unknown', topic: 'Unknown' };
 
                 videos.push({
-                    videoId,
-                    signedUrl,
+                    id: videoId,
+                    title: metadata.title,
+                    author: metadata.author,
+                    topic: metadata.topic,
+                    url: signedUrl,
                 });
             }
         });
@@ -138,7 +149,6 @@ app.get('/api/stream/:videoId', (req, res) => {
         fs.createReadStream(videoPath).pipe(res);
     }
 });
-
 
 app.get('/', (req, res) => {
     res.send('CDN Express Js!');
