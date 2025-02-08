@@ -12,6 +12,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const MediaInfo = require('mediainfo.js').default;
 const app = express();
 const PORT = 3000;
 
@@ -20,13 +21,6 @@ const SECRET_KEY = '6PEV9Kyiw_y9O7orH7UezgNgYedhWmjY2Kf_u1T-mKmR3S-gylF1ztsA-FA0
 
 // Directory containing video files
 const VIDEO_DIRECTORY = path.join(__dirname, '/videos');
-
-// Mock data for video titles, authors, and topics
-const VIDEO_METADATA = {
-    'video1': { title: 'Introduction to Node.js', author: 'John Doe', topic: 'Programming' },
-    'video2': { title: 'Advanced JavaScript', author: 'Jane Smith', topic: 'Web Development' },
-    'video3': { title: 'React for Beginners', author: 'Alice Johnson', topic: 'Frontend Development' },
-};
 
 // Middleware to get client IP
 const getClientIp = (req) => {
@@ -64,35 +58,81 @@ const validateSignedUrl = (videoId, token, expires, ipAddress) => {
     return expectedToken === token;
 };
 
+// Get metadata from video file using mediainfo.js
+const getVideoMetadata = async (videoPath) => {
+    try {
+        const fileSize = fs.statSync(videoPath).size;
+        const readChunk = (size, offset) =>
+            new Promise((resolve, reject) => {
+                const stream = fs.createReadStream(videoPath, { start: offset, end: offset + size - 1 });
+                const chunks = [];
+                stream.on('data', (chunk) => chunks.push(chunk));
+                stream.on('end', () => resolve(Buffer.concat(chunks)));
+                stream.on('error', reject);
+            });
+
+        const mediaInfo = await MediaInfo({ format: 'object' });
+        const result = await mediaInfo.analyzeData(() => fileSize, readChunk);
+
+        const videoTrack = result.media.track.find((track) => track['@type'] === 'Video');
+        const generalTrack = result.media.track.find((track) => track['@type'] === 'General');
+
+        return {
+            title: generalTrack?.Title || 'Unknown',
+            author: generalTrack?.Performer || 'Unknown',
+            topic: generalTrack?.Genre || 'Unknown',
+            duration: generalTrack?.Duration || 0,
+            resolution: videoTrack
+                ? `${videoTrack.Width}x${videoTrack.Height}`
+                : 'Unknown',
+        };
+    } catch (err) {
+        console.error('Error reading video metadata:', err);
+        return {
+            title: 'Unknown',
+            author: 'Unknown',
+            topic: 'Unknown',
+            duration: 0,
+            resolution: 'Unknown',
+        };
+    }
+};
+
 // Get all videos with signed URLs
-app.get('/api/videos', (req, res) => {
+app.get('/api/videos', async (req, res) => {
     const clientIp = getClientIp(req);
     console.log('Client IP:', clientIp);
 
-    const videos = [];
-    fs.readdir(VIDEO_DIRECTORY, (err, files) => {
-        if (err) {
-            return res.status(500).json({ error: 'Unable to read video directory.' });
-        }
+    try {
+        const files = fs.readdirSync(VIDEO_DIRECTORY);
+        const videos = [];
 
-        files.forEach((file) => {
+        for (const file of files) {
             if (file.endsWith('.mp4')) {
                 const videoId = file.replace('.mp4', '');
+                const videoPath = path.join(VIDEO_DIRECTORY, file);
                 const signedUrl = generateSignedUrl(videoId, clientIp);
-                const metadata = VIDEO_METADATA[videoId] || { title: 'Unknown', author: 'Unknown', topic: 'Unknown' };
+
+                // Get metadata from the video file
+                const metadata = await getVideoMetadata(videoPath);
 
                 videos.push({
                     id: videoId,
                     title: metadata.title,
                     author: metadata.author,
                     topic: metadata.topic,
+                    duration: metadata.duration,
+                    resolution: metadata.resolution,
                     url: signedUrl,
                 });
             }
-        });
+        }
 
         res.json(videos);
-    });
+    } catch (err) {
+        console.error('Error reading video directory:', err);
+        res.status(500).json({ error: 'Unable to read video directory.' });
+    }
 });
 
 // Stream video with signed URL validation
