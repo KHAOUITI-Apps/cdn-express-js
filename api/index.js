@@ -31,7 +31,7 @@ const getClientIp = (req) => {
 
 // Generate signed URL
 const generateSignedUrl = (videoId, ipAddress) => {
-    const expiryTime = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour in seconds
+    const expiryTime = Math.floor(Date.now() / 1000) + 24 * 60 * 60; // 24 hour in seconds
     const data = `${videoId}:${expiryTime}:${ipAddress}`;
     const hmac = crypto.createHmac('sha256', SECRET_KEY);
     hmac.update(data);
